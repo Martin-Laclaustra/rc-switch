@@ -1,7 +1,7 @@
 /*
   RCSwitch - Arduino libary for remote control outlet switches
   Copyright (c) 2011 Suat Özgür.  All right reserved.
-  
+
   Contributors:
   - Andre Koehler / info(at)tomate-online(dot)de
   - Gordeev Andrey Vladimirovich / gordeev(at)openpyro(dot)com
@@ -14,7 +14,7 @@
   - Johann Richard / <first name>.<last name>(at)gmail(dot)com
   - Vlad Gheorghe / <first name>.<last name>(at)gmail(dot)com https://github.com/vgheo
   - Martin Laclaustra / <first name>.<last name>(at)gmail(dot)com
-  
+
   Project home: https://github.com/sui77/rc-switch/
 
   This library is free software; you can redistribute it and/or
@@ -33,8 +33,11 @@
 */
 
 #include "RCSwitch.h"
+#ifdef ReadFromFile
+#include "tinywav.h"
+#endif
 
-#ifdef RaspberryPi
+#if defined( RaspberryPi ) or defined( ReadFromFile )
     // PROGMEM and _P functions are for AVR based microprocessors,
     // so we must normalize these for the ARM processor:
     #define PROGMEM
@@ -52,7 +55,7 @@
 
 /* Format for protocol definitions:
  * {pulselength, Sync bit, "0" bit, "1" bit}
- * 
+ *
  * pulselength: pulse length in microseconds, e.g. 350
  * Sync bit: {1, 31} means 1 high pulse and 31 low pulses
  *     (perceived as a 31*pulselength long pulse, total length of sync bit is
@@ -170,8 +173,9 @@ void RCSwitch::setReceiveTolerance(int nPercent) {
   RCSwitch::nReceiveTolerance = nPercent;
 }
 #endif
-  
 
+
+#ifndef ReadFromFile
 /**
  * Enable transmissions
  *
@@ -294,7 +298,7 @@ void RCSwitch::switchOn(const char* sGroup, const char* sDevice) {
 void RCSwitch::switchOff(const char* sGroup, const char* sDevice) {
   this->sendTriState( this->getCodeWordA(sGroup, sDevice, false) );
 }
-
+#endif
 
 /**
  * Returns a char[13], representing the code word to be send.
@@ -373,7 +377,7 @@ char* RCSwitch::getCodeWordC(char sFamily, int nGroup, int nDevice, bool bStatus
   if ( nFamily < 0 || nFamily > 15 || nGroup < 1 || nGroup > 4 || nDevice < 1 || nDevice > 4) {
     return 0;
   }
-  
+
   // encode the family into four bits
   sReturn[nReturnPos++] = (nFamily & 1) ? 'F' : '0';
   sReturn[nReturnPos++] = (nFamily & 2) ? 'F' : '0';
@@ -409,7 +413,7 @@ char* RCSwitch::getCodeWordC(char sFamily, int nGroup, int nDevice, bool bStatus
  *
  * Source: http://www.the-intruder.net/funksteckdosen-von-rev-uber-arduino-ansteuern/
  *
- * @param sGroup        Name of the switch group (A..D, resp. a..d) 
+ * @param sGroup        Name of the switch group (A..D, resp. a..d)
  * @param nDevice       Number of the switch itself (1..3)
  * @param bStatus       Whether to switch on (true) or off (false)
  *
@@ -444,6 +448,7 @@ char* RCSwitch::getCodeWordD(char sGroup, int nDevice, bool bStatus) {
   return sReturn;
 }
 
+#ifndef ReadFromFile
 /**
  * @param sCodeWord   a tristate code word consisting of the letter 0, 1, F
  */
@@ -528,15 +533,47 @@ void RCSwitch::send(unsigned long code, unsigned int length) {
 void RCSwitch::transmit(HighLow pulses) {
   uint8_t firstLogicLevel = (this->protocol.invertedSignal) ? LOW : HIGH;
   uint8_t secondLogicLevel = (this->protocol.invertedSignal) ? HIGH : LOW;
-  
+
   digitalWrite(this->nTransmitterPin, firstLogicLevel);
   delayMicroseconds( this->protocol.pulseLength * pulses.high);
   digitalWrite(this->nTransmitterPin, secondLogicLevel);
   delayMicroseconds( this->protocol.pulseLength * pulses.low);
 }
+#endif
 
+#ifdef ReadFromFile
+void RCSwitch::processWAV(char *sWavFile) {
+  TinyWav tw;
+  //#define BLOCK_SIZE 512
+  const int BLOCK_SIZE = 512;
+  int16_t samples[BLOCK_SIZE];
+  int curr_sample = 0;
+  bool prev_logic_level = false;
 
-#if not defined( RCSwitchDisableReceiving )
+  tinywav_open_read(&tw, sWavFile, TW_MONO, TW_INT16);
+
+  resetAvailable();
+  while (int samples_read = tinywav_read_f(&tw, samples, BLOCK_SIZE)) {
+    for (int i = 0; i < samples_read; i++) {
+      //printf("%f, %d: %d / %d\n", (float)j/tw.h.SampleRate, j, samples[j], samples[j] > 0);
+      curr_sample++;
+      bool new_logic_level = samples[i] >= 0;
+      if (new_logic_level != prev_logic_level) {
+		prev_logic_level = new_logic_level;
+		signalLevelChange(1000000LL*curr_sample/tw.h.SampleRate, new_logic_level);
+	    if (available()) {
+		  tinywav_close_read(&tw);
+          return;
+        }
+      }
+    }
+  }
+
+  tinywav_close_read(&tw);
+}
+#endif
+
+#if not (defined( RCSwitchDisableReceiving ) or defined( ReadFromFile ))
 /**
  * Enable receiving data
  */
@@ -579,6 +616,9 @@ void RCSwitch::disableReceive() {
 #endif // For Raspberry Pi (wiringPi) you can't unregister the ISR
   this->nReceiverInterrupt = -1;
 }
+#endif
+
+#if not defined( RCSwitchDisableReceiving )
 
 bool RCSwitch::available() {
   return RCSwitch::nReceivedValue != 0;
@@ -662,16 +702,16 @@ bool RECEIVE_ATTR RCSwitch::receiveProtocol(const int p, unsigned int changeCoun
     unsigned long alternatesquareddataduration = 0; // preparation for variance calculation
     unsigned long alternatecode = 0;
     unsigned int alternatedelay = 0; // all appearances of delay can be removed if, in future versions, it is decided to drop backwards compatibility
-    
+
     // calculate average of data bits duration
     // calculate variance of data bits duration
     // decode bit sequence,
     // get delay as average of the shorter level timings (for backwards compatibility)
-    
+
     // calculate for alternate positions (shifted one timing) as well
 
     for (unsigned int i = 1; i < changeCount - 2; i += 2) {
-		
+
         unsigned int thisbitDuration = RCSwitch::timings[i]+RCSwitch::timings[i + 1];
         dataduration += thisbitDuration;
         squareddataduration += (unsigned long)thisbitDuration*(unsigned long)thisbitDuration;
@@ -689,13 +729,13 @@ bool RECEIVE_ATTR RCSwitch::receiveProtocol(const int p, unsigned int changeCoun
             delay += RCSwitch::timings[i + 1];
             // all appearances of delay can be removed if dropping backwards compatibility
         }
-        
+
         // for inverted protocols - timings are shifted
 
         unsigned int alternatebitDuration = RCSwitch::timings[i + 1]+RCSwitch::timings[i + 2];
         alternatedataduration += alternatebitDuration;
         alternatesquareddataduration += (unsigned long)alternatebitDuration*(unsigned long)alternatebitDuration;
-		
+
         alternatecode <<= 1;
         if (RCSwitch::timings[i + 1] < RCSwitch::timings[i + 2]) {
             // zero
@@ -713,7 +753,7 @@ bool RECEIVE_ATTR RCSwitch::receiveProtocol(const int p, unsigned int changeCoun
 
     unsigned long variancebitduration = (squareddataduration - (unsigned long)dataduration*(unsigned long)dataduration/numberofdatabits)/(numberofdatabits-1);
     unsigned long alternatevariancebitduration = (alternatesquareddataduration - (unsigned long)alternatedataduration*(unsigned long)alternatedataduration/numberofdatabits)/(numberofdatabits-1);
-    
+
     // decide whether databits are represented by timings 1+2 or 2+3
     bool databitsstartinone = variancebitduration < alternatevariancebitduration;
     // Value true when NOT INVERTED
@@ -721,7 +761,7 @@ bool RECEIVE_ATTR RCSwitch::receiveProtocol(const int p, unsigned int changeCoun
 
     unsigned int averagebitduration = 0;
     unsigned long squaredaveragebitduration = 0;
-    
+
     if(databitsstartinone) {
         averagebitduration = (int)(0.5 + ((double)dataduration)/numberofdatabits);
         squaredaveragebitduration = (unsigned long)averagebitduration * (unsigned long)averagebitduration;
@@ -749,7 +789,7 @@ bool RECEIVE_ATTR RCSwitch::receiveProtocol(const int p, unsigned int changeCoun
 
     // ratio between long and short timing
     unsigned int protocolratio = (unsigned int)(0.5 + ((double)(averagebitduration - delay)) / (double)delay);
-    
+
     // improved pulselenght (delay) calculation
     int normalizedpulselength = (int)(0.5 + (double)averagebitduration/(double)(protocolratio+1));
 
@@ -792,14 +832,14 @@ bool RECEIVE_ATTR RCSwitch::receiveProtocol(const int p, unsigned int changeCoun
             :
             diff(RCSwitch::timings[0], pro.syncFactor.high * delay) < (pro.syncFactor.high * delayTolerance ) // the sync timing is correct
             )
-            ) 
+            )
             { // the sync timing is correct
 
                 finalp = i;
 		break;
 	}
     }
-    
+
     /* For protocols that start low, the sync period looks like
      *               _________
      * _____________|         |XXXXXXXXXXXX|
@@ -823,6 +863,7 @@ bool RECEIVE_ATTR RCSwitch::receiveProtocol(const int p, unsigned int changeCoun
 
 }
 
+#ifndef ReadFromFile
 void RECEIVE_ATTR RCSwitch::handleInterrupt() {
 
   static unsigned int changeCount = 0;
@@ -853,7 +894,7 @@ void RECEIVE_ATTR RCSwitch::handleInterrupt() {
     // store the opposite level, because the time recorded is the one of the previous level
     RCSwitch::firstperiodlevel = ! digitalRead(RCSwitch::nStaticReceiverPin);
   }
- 
+
   // detect overflow
   if (changeCount >= RCSWITCH_MAX_CHANGES) {
     changeCount = 0;
@@ -863,6 +904,50 @@ void RECEIVE_ATTR RCSwitch::handleInterrupt() {
   }
 
   RCSwitch::timings[changeCount++] = duration;
-  lastTime = time;  
+  lastTime = time;
 }
+#else
+void RCSwitch::signalLevelChange(const long time, bool logic_level) {
+
+  static unsigned int changeCount = 0;
+  static unsigned long lastTime = 0;
+  static unsigned int repeatCount = 0;
+
+  //const long time = micros();
+  const unsigned int duration = time - lastTime;
+
+  if (duration > RCSwitch::nSeparationLimit & changeCount != 1 ) {
+    // A long stretch without signal level change occurred. This could
+    // be the gap between two transmission.
+    // It allows a second long duration to be stored
+    // to accomodate for protocols with long high-level (first part) sync duration
+    if (diff(duration, RCSwitch::timings[0]) < 200) {
+      // This long signal is close in length to the long signal which
+      // started the previously recorded timings; this suggests that
+      // it may indeed by a a gap between two transmissions (we assume
+      // here that a sender will send the signal multiple times,
+      // with roughly the same gap between them).
+      repeatCount++;
+      if (repeatCount == 2) {
+        receiveProtocol(1,changeCount);
+        repeatCount = 0;
+      }
+    }
+    changeCount = 0;
+    // store the opposite level, because the time recorded is the one of the previous level
+    RCSwitch::firstperiodlevel = ! logic_level;
+  }
+
+  // detect overflow
+  if (changeCount >= RCSWITCH_MAX_CHANGES) {
+    changeCount = 0;
+    // store the opposite level, because the time recorded is the one of the previous level
+    RCSwitch::firstperiodlevel = ! logic_level;
+    repeatCount = 0;
+  }
+
+  RCSwitch::timings[changeCount++] = duration;
+  lastTime = time;
+}
+#endif
 #endif

@@ -15,3 +15,5 @@
 *.la
 *.a
 
+# Linked Executables
+RFInspect

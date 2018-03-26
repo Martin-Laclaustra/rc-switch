@@ -44,7 +44,9 @@
 #elif defined(SPARK)
     #include "application.h"
 #else
-    #include "WProgram.h"
+    #include <string.h> /* memcpy */
+    #include <stdlib.h> /* abs */
+//  #include "WProgram.h"
 #endif
 
 #include <stdint.h>
@@ -64,7 +66,8 @@ class RCSwitch {
 
   public:
     RCSwitch();
-    
+
+#ifndef ReadFromFile
     void switchOn(int nGroupNumber, int nSwitchNumber);
     void switchOff(int nGroupNumber, int nSwitchNumber);
     void switchOn(const char* sGroup, int nSwitchNumber);
@@ -79,11 +82,16 @@ class RCSwitch {
     void sendTriState(const char* sCodeWord);
     void send(unsigned long code, unsigned int length);
     void send(const char* sCodeWord);
+#endif
     
     #if not defined( RCSwitchDisableReceiving )
+#ifdef ReadFromFile
+    void processWAV(char *sWavFile);
+#else
     void enableReceive(int interrupt);
     void enableReceive();
     void disableReceive();
+#endif
     bool available();
     void resetAvailable();
 
@@ -96,8 +104,10 @@ class RCSwitch {
     unsigned int getReceivedLevelInFirstTiming();
     #endif
   
+#ifndef ReadFromFile
     void enableTransmit(int nTransmitterPin);
     void disableTransmit();
+#endif
     void setPulseLength(int nPulseLength);
     void setRepeatTransmit(int nRepeatTransmit);
     #if not defined( RCSwitchDisableReceiving )
@@ -155,7 +165,11 @@ class RCSwitch {
     char* getCodeWordB(int nGroupNumber, int nSwitchNumber, bool bStatus);
     char* getCodeWordC(char sFamily, int nGroup, int nDevice, bool bStatus);
     char* getCodeWordD(char group, int nDevice, bool bStatus);
+#ifndef ReadFromFile
     void transmit(HighLow pulses);
+#else
+    void signalLevelChange(const long time, bool logic_level);
+#endif
 
     #if not defined( RCSwitchDisableReceiving )
     static void handleInterrupt();
