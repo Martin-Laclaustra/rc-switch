@@ -50,9 +50,8 @@ int main(int argc, char *argv[])
                 return 0;
         }
 
-	int pulseLength = 0;
+        int pulseLength = 0;
         if (optind + 1 < argc) pulseLength = atoi(argv[optind + 1]);
-
 
 	mySwitch = RCSwitch();
 	if (pulseLength != 0) mySwitch.setPulseLength(pulseLength);
@@ -67,7 +66,7 @@ int main(int argc, char *argv[])
 
                 printf("Received %i\n", mySwitch.getReceivedValue() );
 
-                if ((argc > 1 && strcmp(argv[1],"-v") == 0) || (argc > 2 && strcmp(argv[2],"-v") == 0)) {
+                if (verbose || (argc > 2 && strcmp(argv[argc-1],"-v") == 0)) {
                         int nbitlength = mySwitch.getReceivedBitlength();
                         int numberoftimings = 2 * nbitlength + 2;
                         int databuffer[64]; // get a copy of the received timings before they are overwritten
