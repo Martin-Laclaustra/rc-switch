@@ -123,7 +123,7 @@ int main(int argc, char *argv[])
                         printf("Data bit duration = %i and standard deviation = %.2f\n", averagebitduration, sdbitduration );
 
                         double coefficientofvariation = sdbitduration / averagebitduration;
-                        printf("Coefficient of variation of data-bit duration = %.2f % (should be less than 10%)\n", 100*coefficientofvariation );
+                        printf("Coefficient of variation of data-bit duration = %.2f %% (should be less than 10%%)\n", 100*coefficientofvariation );
                         printf("Do not use the rest of the information if big coefficient of variation\n");
                         unsigned int protocolratio = (unsigned int)(0.5 + (double)(averagebitduration-npulselength)/(double)npulselength);
                         printf("Long-to-short duration ratio for data bits (rounded) = %i\n", protocolratio );
